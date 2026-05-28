@@ -1,5 +1,5 @@
 {
-  "name": "Dolby AC-4 Decoder",
+  "name": "Refract",
   "description": "Decode and export Dolby AC-4 IMS (binaural) and L4 (multichannel) files locally on supported devices.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
