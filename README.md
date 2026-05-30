@@ -1,11 +1,12 @@
-**How to run app locally**
+# Refract
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+Android decoder for Dolby Atmos files, currently supporting DD+JOC (both streaming and Blu-Ray) and Dolby AC-4 IMS (binaural). Without having to rely on a PC.
 
+The app requires and utilizes your phone's licensed OEM decoders (which is used by streaming platforms to playback Atmos) via MediaCodec().
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+# Supported formats
+* **E-AC3-JOC (Dolby Digital Plus Atmos)**: Supports both the standard Online Media profile (.ec3, found on streaming platforms) and the Blu-Ray profile (.eb3). Max decode layout is 9.1.6 (16 channels).
+
+* **Dolby AC-4 IMS (Immersive Stereo)**: Can be decoded to 2.0 (stereo) max.
+
+Dolby AC-4 IMS decoding may only works on Samsung devices running Android 11 or higher. Google Pixels and few Chinese phone brands can't function yet due to lack of Dolby licenses.
