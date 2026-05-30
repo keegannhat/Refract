@@ -46,6 +46,20 @@ object DolbyAc4Decoder {
         val dialogueLevelDb: Double
     )
 
+    private fun isDolbyTrack(mime: String, lowerName: String, ext: String): Boolean {
+        // Direct MIME match
+        if (mime.contains("ac4", ignoreCase = true)) return true
+        if (mime.contains("eac3", ignoreCase = true)) return true
+        if (mime.contains("dolby", ignoreCase = true)) return true
+        // MIME starts with audio/ and file extension hints at Dolby
+        if (mime.startsWith("audio/") && (
+            ext == "ac4" || ext == "ec3" || ext == "eac3" ||
+            lowerName.contains("_ac4") || lowerName.contains("_ec3") ||
+            lowerName.contains("atmos") || lowerName.contains("dolby")
+        )) return true
+        return false
+    }
+
     /**
      * Inspects a file to retrieve its audio tracks and profile format. Supports AC-4, EC-3 (Atmos).
      */
@@ -74,58 +88,78 @@ object DolbyAc4Decoder {
         try {
             extractor.setDataSource(context, fileUri, null)
             val trackCount = extractor.trackCount
-            for (i in 0 until trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-                
-                if (mime.contains("ac4", ignoreCase = true) || mime.contains("dolby-ac4", ignoreCase = true) ||
-                    mime.contains("eac3", ignoreCase = true) || mime.contains("dolby-eac3", ignoreCase = true)) {
-                    
-                    val channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                        format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                    } else {
-                        if (mime.contains("eac3", ignoreCase = true)) 8 else 6
-                    }
-                    val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                        format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                    } else {
-                        48000
-                    }
-                    val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
-                        format.getLong(MediaFormat.KEY_DURATION)
-                    } else {
-                        10_000_000L
-                    }
-                    val bitrate = if (format.containsKey(MediaFormat.KEY_BIT_RATE)) {
-                        format.getInteger(MediaFormat.KEY_BIT_RATE)
-                    } else {
-                        256000
-                    }
-                    
-                    val profile = when {
-                        mime.contains("eac3", ignoreCase = true) -> {
-                            "E-AC3-JOC (Dolby Digital Plus & Atmos Objects)"
-                        }
-                        channels == 2 -> {
-                            "AC-4 IMS (Immersive Stereo / Binaural)"
-                        }
-                        else -> {
-                            "AC-4 L4 (Multichannel Surround, ${channels}ch)"
-                        }
-                    }
+            var bestTrackIndex = -1
+            var bestFormat: MediaFormat? = null
+            var bestMime: String? = null
+            var bestPriority = 0
 
-                    return DecodedMetadata(
-                        mimeType = mime,
-                        channelCount = channels,
-                        sampleRate = sampleRate,
-                        durationUs = durationUs,
-                        profile = profile,
-                        bitRate = bitrate,
-                        bitDepth = 16,
-                        presentationsCount = if (mime.contains("ac4")) 3 else 1,
-                        jocVersion = if (mime.contains("eac3")) "JOC v2 (Atmos Master Spatial Objects)" else "AC-4 Immersive Stage"
-                    )
+            for (i in 0 until trackCount) {
+                val trackFormat = extractor.getTrackFormat(i)
+                val trackMime = trackFormat.getString(MediaFormat.KEY_MIME) ?: ""
+                val priority = when {
+                    trackMime.contains("eac3", ignoreCase = true) -> 3
+                    trackMime.contains("ac4", ignoreCase = true) -> 2
+                    trackMime.contains("dolby", ignoreCase = true) -> 2
+                    isDolbyTrack(trackMime, lowerName, ext) -> 1
+                    else -> 0
                 }
+                if (priority > bestPriority) {
+                    bestPriority = priority
+                    bestTrackIndex = i
+                    bestFormat = trackFormat
+                    bestMime = if (priority == 1) {
+                        if (ext == "ec3" || ext == "eac3") "audio/eac3" else "audio/ac4"
+                    } else trackMime
+                }
+            }
+
+            if (bestTrackIndex != -1 && bestFormat != null && bestMime != null) {
+                val format = bestFormat
+                val mime = bestMime
+                val channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                    format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                } else {
+                    if (mime.contains("eac3", ignoreCase = true)) 8 else 6
+                }
+                val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                } else {
+                    48000
+                }
+                val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+                    format.getLong(MediaFormat.KEY_DURATION)
+                } else {
+                    10_000_000L
+                }
+                val bitrate = if (format.containsKey(MediaFormat.KEY_BIT_RATE)) {
+                    format.getInteger(MediaFormat.KEY_BIT_RATE)
+                } else {
+                    256000
+                }
+                
+                val profile = when {
+                    mime.contains("eac3", ignoreCase = true) -> {
+                        "E-AC3-JOC (Dolby Digital Plus & Atmos Objects)"
+                    }
+                    channels == 2 -> {
+                        "AC-4 IMS (Immersive Stereo / Binaural)"
+                    }
+                    else -> {
+                        "AC-4 L4 (Multichannel Surround, ${channels}ch)"
+                    }
+                }
+
+                return DecodedMetadata(
+                    mimeType = mime,
+                    channelCount = channels,
+                    sampleRate = sampleRate,
+                    durationUs = durationUs,
+                    profile = profile,
+                    bitRate = bitrate,
+                    bitDepth = 16,
+                    presentationsCount = if (mime.contains("ac4")) 3 else 1,
+                    jocVersion = if (mime.contains("eac3")) "JOC v2 (Atmos Master Spatial Objects)" else "AC-4 Immersive Stage"
+                )
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -266,6 +300,25 @@ object DolbyAc4Decoder {
         onProgress: suspend (Float) -> Unit,
         onStatusUpdate: suspend (String) -> Unit
     ): DecodedMetadata = withContext(Dispatchers.IO) {
+        var fileName = ""
+        try {
+            context.contentResolver.query(
+                inputUri, null, null, null, null
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(
+                    android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    fileName = cursor.getString(nameIndex) ?: ""
+                }
+            }
+        } catch (e: Exception) { }
+        if (fileName.isEmpty()) {
+            fileName = inputUri.lastPathSegment ?: ""
+        }
+        val ext = fileName.substringAfterLast('.', "")
+            .lowercase(java.util.Locale.getDefault())
+        val lowerName = fileName.lowercase(java.util.Locale.getDefault())
+
         val supportInfo = checkAc4Support()
 
         var trackIndex = -1
@@ -278,20 +331,41 @@ object DolbyAc4Decoder {
         try {
             extractor.setDataSource(context, inputUri, null)
 
+            var bestTrackIndex = -1
+            var bestFormat: MediaFormat? = null
+            var bestMime: String? = null
+            var bestPriority = 0
+
             for (i in 0 until extractor.trackCount) {
                 val trackFormat = extractor.getTrackFormat(i)
                 val trackMime = trackFormat.getString(MediaFormat.KEY_MIME) ?: ""
-                if (trackMime.contains("ac4", ignoreCase = true) || trackMime.contains("dolby-ac4", ignoreCase = true) ||
-                    trackMime.contains("eac3", ignoreCase = true) || trackMime.contains("dolby-eac3", ignoreCase = true)) {
-                    trackIndex = i
-                    format = trackFormat
-                    mime = trackMime
-                    break
+                val priority = when {
+                    trackMime.contains("eac3", ignoreCase = true) -> 3
+                    trackMime.contains("ac4", ignoreCase = true) -> 2
+                    trackMime.contains("dolby", ignoreCase = true) -> 2
+                    isDolbyTrack(trackMime, lowerName, ext) -> 1
+                    else -> 0
+                }
+                if (priority > bestPriority) {
+                    bestPriority = priority
+                    bestTrackIndex = i
+                    bestFormat = trackFormat
+                    bestMime = if (priority == 1) {
+                        if (ext == "ec3" || ext == "eac3") "audio/eac3" else "audio/ac4"
+                    } else trackMime
                 }
             }
 
+            trackIndex = bestTrackIndex
+            format = bestFormat
+            mime = bestMime
+
             if (trackIndex == -1 || format == null || mime == null) {
-                throw IOException("No Dolby AC-4 or E-AC3 audio tracks found in file.")
+                throw IOException(
+                    "No Dolby AC-4 or E-AC3 track found. " +
+                    "Tracks found: ${(0 until extractor.trackCount)
+                        .map { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }.joinToString()}"
+                )
             }
 
             extractor.selectTrack(trackIndex)
