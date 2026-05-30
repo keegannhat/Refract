@@ -634,82 +634,77 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
 
                 val processingState = _uiState.value as? UIState.Processing ?: UIState.Processing(state.name, 0.95f, "Writing file...")
 
-                when (_exportMode.value) {
+                withContext(Dispatchers.IO) {
+                  when (_exportMode.value) {
+
                     ExportMode.WaveMultichannel -> {
-                        withContext(Dispatchers.IO) {
-                            val destFile = File(exportsDir, "${clearName}_multichannel.wav")
-                            cachePcmFile.copyTo(destFile, overwrite = true)
-                            finalFiles.add(destFile)
-                        }
+                      val dest = File(exportsDir, "${clearName}_multichannel.wav")
+                      cachePcmFile.copyTo(dest, overwrite = true)
+                      finalFiles.add(dest)
                     }
-                    ExportMode.StereoBinauralWav -> {
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = processingState.copy(
-                                progress = 0.97f, status = "Downmixing to stereo...")
-                        }
-                        val ext = if (_exportFlacStereo.value) "flac" else "wav"
-                        val destFile = File(exportsDir, "${clearName}_stereo.$ext")
-                        withContext(Dispatchers.IO) {
-                            val ok = FfmpegExportHelper.stereoDownmix(
-                                cachePcmFile, destFile,
-                                _defaultSampleRate.value,
-                                _defaultBitDepth.value,
-                                asFlac = _exportFlacStereo.value
-                            )
-                            if (ok) finalFiles.add(destFile)
-                            else throw Exception("Stereo downmix failed — check ffmpeg logs")
-                        }
-                    }
+
                     ExportMode.MonoWavCustomSplit -> {
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = processingState.copy(
-                                progress = 0.97f, status = "Splitting channels...")
-                        }
-                        withContext(Dispatchers.IO) {
-                            val splits = FfmpegExportHelper.splitChannels(
-                                cachePcmFile, exportsDir, clearName,
-                                activeMetadata.channelCount,
-                                _defaultSampleRate.value,
-                                _defaultBitDepth.value,
-                                asFlac = false
-                            ) { done, total ->
-                                DecodingForegroundService.updateProgress(
-                                    context, 97 + (done * 2 / total),
-                                    "Splitting channel $done of $total...")
-                            }
-                            finalFiles.addAll(splits)
-                        }
+                      withContext(Dispatchers.Main) {
+                        _uiState.value = processingState.copy(
+                          progress = 0.97f, status = "Splitting channels...")
+                      }
+                      val splits = FfmpegExportHelper.splitChannels(
+                        cachePcmFile, exportsDir, clearName,
+                        activeMetadata.channelCount,
+                        _defaultSampleRate.value, _defaultBitDepth.value,
+                        asFlac = false
+                      ) { done, total ->
+                        com.example.DecodingForegroundService.updateProgress(
+                          context, 97 + (done * 2 / total),
+                          "Splitting channel $done of $total...")
+                      }
+                      finalFiles.addAll(splits)
                     }
+
                     ExportMode.MonoFlacCustomSplit -> {
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = processingState.copy(
-                                progress = 0.97f, status = "Encoding FLAC channels...")
-                        }
-                        val tempDir = File(context.cacheDir, "flac_splits").apply { mkdirs() }
-                        val splitFlacs = withContext(Dispatchers.IO) {
-                            FfmpegExportHelper.splitChannels(
-                                cachePcmFile, tempDir, clearName,
-                                activeMetadata.channelCount,
-                                _defaultSampleRate.value,
-                                _defaultBitDepth.value,
-                                asFlac = true
-                            ) { done, total ->
-                                DecodingForegroundService.updateProgress(
-                                    context, 97 + (done * 2 / total),
-                                    "FLAC encoding $done of $total channels...")
-                            }
-                        }
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = processingState.copy(
-                                progress = 0.99f, status = "Compressing to ZIP...")
-                        }
-                        withContext(Dispatchers.IO) {
-                            val zipFile = File(exportsDir, 
-                                "${clearName}_SplitFLAC_${activeMetadata.channelCount}ch.zip")
-                            FfmpegExportHelper.zipFiles(splitFlacs, zipFile)
-                            finalFiles.add(zipFile)
-                        }
+                      withContext(Dispatchers.Main) {
+                        _uiState.value = processingState.copy(
+                          progress = 0.97f, status = "Encoding FLAC channels...")
+                      }
+                      val tempDir = File(context.cacheDir, "flac_tmp").apply { mkdirs() }
+                      val flacs = FfmpegExportHelper.splitChannels(
+                        cachePcmFile, tempDir, clearName,
+                        activeMetadata.channelCount,
+                        _defaultSampleRate.value, _defaultBitDepth.value,
+                        asFlac = true
+                      ) { done, total ->
+                        com.example.DecodingForegroundService.updateProgress(
+                          context, 97 + (done * 2 / total),
+                          "FLAC $done/$total channels...")
+                      }
+                      withContext(Dispatchers.Main) {
+                        _uiState.value = processingState.copy(
+                          progress = 0.995f, status = "Compressing to ZIP...")
+                      }
+                      val zip = File(exportsDir,
+                        "${clearName}_SplitFLAC_${activeMetadata.channelCount}ch.zip")
+                      FfmpegExportHelper.zipFiles(flacs, zip)
+                      finalFiles.add(zip)
                     }
+
+                    ExportMode.StereoBinauralWav -> {
+                      withContext(Dispatchers.Main) {
+                        _uiState.value = processingState.copy(
+                          progress = 0.97f, status = "Downmixing to stereo...")
+                      }
+                      val useFLAC = _exportFlacStereo.value
+                      val ext2 = if (useFLAC) "flac" else "wav"
+                      val dest = File(exportsDir, "${clearName}_stereo.$ext2")
+                      val ok = FfmpegExportHelper.stereoDownmix(
+                        cachePcmFile, dest,
+                        _defaultSampleRate.value, _defaultBitDepth.value,
+                        asFlac = useFLAC
+                      )
+                      if (ok) finalFiles.add(dest)
+                      else throw Exception(
+                        "Stereo downmix failed. Check that ffmpeg-kit is correctly included in build.gradle.kts.")
+                    }
+                  }
                 }
 
                 withContext(Dispatchers.IO) {

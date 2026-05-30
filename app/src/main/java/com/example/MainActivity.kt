@@ -1471,10 +1471,15 @@ fun FileSelectedCard(
                     onClick = { onModeSelect(AudioDecoderViewModel.ExportMode.WaveMultichannel) }
                 )
 
+                val allowSplit = info.channelCount > 2
+                val tooltipMsg = if (allowSplit) null else "AC-4 IMS is 2.0 — split export not applicable."
+
                 ExportModeOptionTile(
                     title = "Split WAV (per channel)",
                     desc = "Splits each audio track coordinate into individual discrete mono WAV files.",
                     selected = selectedMode == AudioDecoderViewModel.ExportMode.MonoWavCustomSplit,
+                    enabled = allowSplit,
+                    tooltip = tooltipMsg,
                     onClick = { onModeSelect(AudioDecoderViewModel.ExportMode.MonoWavCustomSplit) }
                 )
 
@@ -1482,6 +1487,8 @@ fun FileSelectedCard(
                     title = "Split FLAC (zipped)",
                     desc = "Compresses and encapsulates split channel flacs natively into a single manageable .zip archive.",
                     selected = selectedMode == AudioDecoderViewModel.ExportMode.MonoFlacCustomSplit,
+                    enabled = allowSplit,
+                    tooltip = tooltipMsg,
                     onClick = { onModeSelect(AudioDecoderViewModel.ExportMode.MonoFlacCustomSplit) }
                 )
             }
@@ -1508,50 +1515,69 @@ fun FileSelectedCard(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ExportModeOptionTile(
     title: String,
     desc: String,
     selected: Boolean,
+    enabled: Boolean = true,
+    tooltip: String? = null,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) CyberCyan.copy(alpha = 0.08f) else Color.Transparent)
-            .border(
-                1.dp,
-                if (selected) CyberCyan else SurfaceBorder,
-                RoundedCornerShape(8.dp)
-            )
-            .clickable { onClick() }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+    androidx.compose.material3.TooltipBox(
+        positionProvider = androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = {
+            if (!enabled && tooltip != null) {
+                androidx.compose.material3.PlainTooltip {
+                    Text(tooltip)
+                }
+            }
+        },
+        state = androidx.compose.material3.rememberTooltipState()
     ) {
-        RadioButton(
-            selected = selected,
-            onClick = onClick,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = CyberCyan,
-                unselectedColor = CoolGrayText
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .alpha(if (enabled) 1f else 0.38f)
+                .background(if (selected) CyberCyan.copy(alpha = 0.08f) else Color.Transparent)
+                .border(
+                    1.dp,
+                    if (selected) CyberCyan else SurfaceBorder,
+                    RoundedCornerShape(8.dp)
+                )
+                .clickable(enabled = enabled) { onClick() }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = selected,
+                onClick = if (enabled) onClick else null,
+                enabled = enabled,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = CyberCyan,
+                    unselectedColor = CoolGrayText,
+                    disabledSelectedColor = CyberCyan.copy(alpha = 0.38f),
+                    disabledUnselectedColor = CoolGrayText.copy(alpha = 0.38f)
+                )
             )
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                color = if (selected) CyberCyan else IceWhite,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                desc,
-                color = CoolGrayText,
-                fontSize = 11.sp,
-                lineHeight = 14.sp
-            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = if (selected) CyberCyan else IceWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    desc,
+                    color = CoolGrayText,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
         }
     }
 }
