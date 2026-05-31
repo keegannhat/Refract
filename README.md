@@ -1,4 +1,6 @@
 # Refract
+[![Download Nightly](https://img.shields.io/badge/Download-Nightly-blue.svg)](https://nightly.link/keegannhat/Refract/workflows/ci/main/Refract-Debug.zip)
+
 Android decoder for Dolby Atmos files, currently supporting **DD+JOC** (both streaming and Blu-Ray) and **Dolby AC-4** IMS (binaural). Works offline and does not require any external apps.
 
 The app requires and utilizes your phone's licensed OEM decoders (which is used by streaming platforms to playback Atmos) via MediaCodec().
