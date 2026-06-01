@@ -224,58 +224,15 @@ fun DecoderAppScreen(
 
     Box(
         modifier = modifier
-            .background(Color(0xFF000000))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        SlateGrayBg,
+                        Color(0xFF060912)
+                    )
+                )
+            )
     ) {
-        // Abstract Liquid Glass Background Nodes
-        val infiniteTransition = rememberInfiniteTransition()
-        val phase by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 2f * Math.PI.toFloat(),
-            animationSpec = infiniteRepeatable(tween(22000, easing = LinearEasing), RepeatMode.Restart)
-        )
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val center1 = Offset(
-                x = size.width * 0.2f + (kotlin.math.cos(phase) * size.width * 0.15f),
-                y = size.height * 0.2f + (kotlin.math.sin(phase) * size.height * 0.1f)
-            )
-            val center2 = Offset(
-                x = size.width * 0.8f + (kotlin.math.cos(phase + 2f) * size.width * 0.2f),
-                y = size.height * 0.4f + (kotlin.math.sin(phase + 1f) * size.height * 0.15f)
-            )
-            val center3 = Offset(
-                x = size.width * 0.5f + (kotlin.math.cos(phase + 4f) * size.width * 0.15f),
-                y = size.height * 0.8f + (kotlin.math.sin(phase + 3f) * size.height * 0.15f)
-            )
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFFF9F0A).copy(alpha = 0.15f), Color.Transparent),
-                    center = center1,
-                    radius = size.width * 0.6f
-                ),
-                radius = size.width * 0.6f,
-                center = center1
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFFF5E00).copy(alpha = 0.12f), Color.Transparent),
-                    center = center2,
-                    radius = size.width * 0.8f
-                ),
-                radius = size.width * 0.8f,
-                center = center2
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF200A03).copy(alpha = 0.3f), Color.Transparent),
-                    center = center3,
-                    radius = size.width * 0.7f
-                ),
-                radius = size.width * 0.7f,
-                center = center3
-            )
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -681,7 +638,7 @@ fun CodecDetailDialog(codec: CodecDetail, onDismiss: () -> Unit) {
                 Text("CLOSE", color = CoolGrayText, fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = Color(0xFF131316),
+        containerColor = CardDark,
         titleContentColor = IceWhite,
         textContentColor = CoolGrayText
     )
@@ -1336,8 +1293,7 @@ fun FileSelectedCard(
                     "Stereo" to false,
                     "5.1"   to isIms,   // disabled when IMS
                     "7.1"   to isIms,
-                    "7.1.4" to isIms,
-                    "9.1.6" to isIms
+                    "7.1.4" to isIms
                 )
                 layoutOptions.forEach { (layout, disabled) ->
                     val isLayoutActive = speakerConfig == layout
@@ -1458,31 +1414,14 @@ fun FileSelectedCard(
                             speakerJoints.add("L" to Offset(cx - radius * 0.707f, cy - radius * 0.707f))
                             speakerJoints.add("R" to Offset(cx + radius * 0.707f, cy - radius * 0.707f))
                             speakerJoints.add("C" to Offset(cx, cy - radius * 0.95f))
-                            speakerJoints.add("LFE" to Offset(cx - radius * 0.3f, cy - radius * 0.5f))
+                            speakerJoints.add("LFE" to Offset(cx / 1.5f, cy - radius * 0.4f))
                             speakerJoints.add("Ls" to Offset(cx - radius * 0.98f, cy))
                             speakerJoints.add("Rs" to Offset(cx + radius * 0.98f, cy))
                             speakerJoints.add("Lbs" to Offset(cx - radius * 0.5f, cy + radius * 0.8f))
                             speakerJoints.add("Rbs" to Offset(cx + radius * 0.5f, cy + radius * 0.8f))
+                            // Heights (Neon Magenta dots)
                             speakerJoints.add("Ltf" to Offset(cx - radius * 0.4f, cy - radius * 0.4f))
                             speakerJoints.add("Rtf" to Offset(cx + radius * 0.4f, cy - radius * 0.4f))
-                            speakerJoints.add("Ltr" to Offset(cx - radius * 0.4f, cy + radius * 0.4f))
-                            speakerJoints.add("Rtr" to Offset(cx + radius * 0.4f, cy + radius * 0.4f))
-                        }
-                        "9.1.6" -> {
-                            speakerJoints.add("L" to Offset(cx - radius * 0.707f, cy - radius * 0.707f))
-                            speakerJoints.add("R" to Offset(cx + radius * 0.707f, cy - radius * 0.707f))
-                            speakerJoints.add("C" to Offset(cx, cy - radius * 0.95f))
-                            speakerJoints.add("LFE" to Offset(cx - radius * 0.3f, cy - radius * 0.5f))
-                            speakerJoints.add("Lss" to Offset(cx - radius * 0.98f, cy - radius * 0.35f))
-                            speakerJoints.add("Rss" to Offset(cx + radius * 0.98f, cy - radius * 0.35f))
-                            speakerJoints.add("Ls" to Offset(cx - radius * 0.98f, cy + radius * 0.2f))
-                            speakerJoints.add("Rs" to Offset(cx + radius * 0.98f, cy + radius * 0.2f))
-                            speakerJoints.add("Lbs" to Offset(cx - radius * 0.5f, cy + radius * 0.8f))
-                            speakerJoints.add("Rbs" to Offset(cx + radius * 0.5f, cy + radius * 0.8f))
-                            speakerJoints.add("Ltf" to Offset(cx - radius * 0.4f, cy - radius * 0.4f))
-                            speakerJoints.add("Rtf" to Offset(cx + radius * 0.4f, cy - radius * 0.4f))
-                            speakerJoints.add("Ltm" to Offset(cx - radius * 0.35f, cy))
-                            speakerJoints.add("Rtm" to Offset(cx + radius * 0.35f, cy))
                             speakerJoints.add("Ltr" to Offset(cx - radius * 0.4f, cy + radius * 0.4f))
                             speakerJoints.add("Rtr" to Offset(cx + radius * 0.4f, cy + radius * 0.4f))
                         }
@@ -2032,7 +1971,6 @@ fun ActiveAnalyzerAtmosPanel(
                     "5.1" -> 6
                     "7.1" -> 8
                     "7.1.4" -> 12
-                    "9.1.6" -> 12
                     else -> 6
                 }
                 val channelLabels = when (speakerConfig) {
@@ -2041,7 +1979,6 @@ fun ActiveAnalyzerAtmosPanel(
                     "5.1" -> listOf("L", "R", "C", "LFE", "Ls", "Rs")
                     "7.1" -> listOf("L", "R", "C", "LFE", "Ls", "Rs", "Lbs", "Rbs")
                     "7.1.4" -> listOf("L", "R", "C", "LFE", "Ls", "Rs", "Lbs", "Rbs", "Ltf", "Rtf", "Ltr", "Rtr")
-                    "9.1.6" -> listOf("L", "R", "C", "LFE", "Ls", "Rs", "Lbs", "Rbs", "Ltf", "Rtf", "Ltr", "Rtr")
                     else -> listOf("L", "R", "C", "LFE", "Ls", "Rs")
                 }
 
@@ -2417,7 +2354,7 @@ fun SystemSettingsDialog(
                 }
             }
         },
-        containerColor = Color(0xFF131316)
+        containerColor = CardDark
     )
 }
 
@@ -2465,7 +2402,7 @@ fun HardwareInfoDialog(
                 )
             }
         },
-        containerColor = Color(0xFF131316)
+        containerColor = CardDark
     )
 }
 

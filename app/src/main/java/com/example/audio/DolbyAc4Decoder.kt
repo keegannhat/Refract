@@ -632,17 +632,12 @@ object DolbyAc4Decoder {
                 WavHelper.updateWavHeaderSizes(outputPcmFile, outputPcmFile.length() - 44)
             }
             
-            // The output WAV has targetChannelCount channels because FFmpeg was called with -ac N.
-            // Use that as the authoritative channel count; fall back to the probed input count only
-            // when no target was specified (i.e. targetChannelCount == null).
-            val outputChannelCount = targetChannelCount ?: channels
-
             DecodedMetadata(
                 mimeType = "audio/eac3",
-                channelCount = outputChannelCount,
+                channelCount = channels,
                 sampleRate = sampleRate,
                 durationUs = durationUs,
-                profile = "E-AC3-JOC (Dolby Digital Plus Atmos) Software Decode (${outputChannelCount}ch)",
+                profile = "E-AC3-JOC (Dolby Digital Plus Atmos) Software Decode (${channels}ch)",
                 bitDepth = targetBitsPerSample,
                 bitRate = bitRate,
                 isSimulated = false,

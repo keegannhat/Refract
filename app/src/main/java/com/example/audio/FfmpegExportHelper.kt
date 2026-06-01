@@ -117,31 +117,6 @@ object FfmpegExportHelper {
         )
     }
 
-    /**
-     * Upmixes (or downmixes) [inputFile] to exactly [targetChannelCount] channels, writing the
-     * result to [outputFile]. Used when the hardware decoder caps below the user-selected layout.
-     *
-     * FFmpeg's -ac flag remaps channels: existing channels are kept, any additional channels
-     * are filled with silence. This ensures the downstream splitChannels() pan filters always
-     * find the expected number of input channels.
-     *
-     * Returns true on success.
-     */
-    fun upmixChannels(
-        inputFile: File,
-        outputFile: File,
-        targetChannelCount: Int,
-        sampleRate: Int,
-        bitsPerSample: Int
-    ): Boolean {
-        val codec = "pcm_s${bitsPerSample}le"
-        return run(
-            "-y -i \"${inputFile.absolutePath}\" " +
-            "-ac $targetChannelCount -ar $sampleRate -c:a $codec " +
-            "\"${outputFile.absolutePath}\""
-        )
-    }
-
     fun zipFiles(files: List<File>, zipFile: File): Boolean {
         return try {
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->

@@ -16,4 +16,3 @@
 local.properties
 .env
 debug.keystore
-.build-outputs/
