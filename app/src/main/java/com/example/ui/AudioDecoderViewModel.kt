@@ -490,7 +490,7 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                 } else if (metadata.channelCount == 6) {
                     _speakerConfig.value = "5.1"
                 } else if (metadata.channelCount >= 8) {
-                    _speakerConfig.value = "7.1.4"
+                    _speakerConfig.value = if (formatKey == "truehd") "7.1" else "7.1.4"
                 }
 
                 // Generates Available Dolby presentations
@@ -682,6 +682,13 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                     }
 
                     when (formatKey) {
+                        "truehd" -> {
+                            _activeDecoderType.value = "TrueHD · FFmpeg Software"
+                            DolbyAc4Decoder.decodeTrueHdSoftware(
+                                context, state.uri, cachePcmFile, _defaultBitDepth.value, targetChannelCount,
+                                progLambda, statusLambda
+                            )
+                        }
                         "eac3" -> {
                             val hasHardwareEac3 = _supportInfo.value?.availableCodecs?.any {
                                 it.mimeType.contains("eac3", ignoreCase = true) && !it.isEncoder &&

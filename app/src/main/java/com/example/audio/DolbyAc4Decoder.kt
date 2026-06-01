@@ -54,11 +54,12 @@ object DolbyAc4Decoder {
         // Direct MIME match
         if (mime.contains("ac4", ignoreCase = true)) return true
         if (mime.contains("eac3", ignoreCase = true)) return true
+        if (mime.contains("truehd", ignoreCase = true) || mime.contains("true-hd", ignoreCase = true)) return true
         if (mime.contains("dolby", ignoreCase = true)) return true
         // MIME starts with audio/ and file extension hints at Dolby
         if (mime.startsWith("audio/") && (
-            ext == "ac4" || ext == "ec3" || ext == "eac3" ||
-            lowerName.contains("_ac4") || lowerName.contains("_ec3") ||
+            ext == "ac4" || ext == "ec3" || ext == "eac3" || ext == "mlp" ||
+            lowerName.contains("_ac4") || lowerName.contains("_ec3") || lowerName.contains("truehd") ||
             lowerName.contains("atmos") || lowerName.contains("dolby")
         )) return true
         return false
@@ -101,6 +102,7 @@ object DolbyAc4Decoder {
                 val trackFormat = extractor.getTrackFormat(i)
                 val trackMime = trackFormat.getString(MediaFormat.KEY_MIME) ?: ""
                 val priority = when {
+                    trackMime.contains("truehd", ignoreCase = true) || trackMime.contains("true-hd", ignoreCase = true) -> 4
                     trackMime.contains("eac3", ignoreCase = true) -> 3
                     trackMime.contains("ac4", ignoreCase = true) -> 2
                     trackMime.contains("dolby", ignoreCase = true) -> 2
@@ -112,7 +114,8 @@ object DolbyAc4Decoder {
                     bestTrackIndex = i
                     bestFormat = trackFormat
                     bestMime = if (priority == 1) {
-                        if (ext == "ec3" || ext == "eac3") "audio/eac3" else "audio/ac4"
+                        if (ext == "mlp") "audio/truehd"
+                        else if (ext == "ec3" || ext == "eac3") "audio/eac3" else "audio/ac4"
                     } else trackMime
                 }
             }
@@ -172,7 +175,19 @@ object DolbyAc4Decoder {
         }
 
         // Parse from resolved file name as high-fidelity safety fallback
-        return if (ext == "ec3" || ext == "eac3" || lowerName.contains("ec3") || lowerName.contains("eac3")) {
+        return if (ext == "mlp" || lowerName.contains("truehd")) {
+            DecodedMetadata(
+                mimeType = "audio/truehd",
+                channelCount = 8,
+                sampleRate = 48000,
+                durationUs = 15_000_000L,
+                profile = "Dolby TrueHD (Lossless Atmos)",
+                bitRate = 3000000,
+                bitDepth = 24,
+                presentationsCount = 1,
+                jocVersion = "TrueHD Lossless"
+            )
+        } else if (ext == "ec3" || ext == "eac3" || lowerName.contains("ec3") || lowerName.contains("eac3")) {
             DecodedMetadata(
                 mimeType = "audio/eac3",
                 channelCount = 8,
@@ -642,6 +657,91 @@ object DolbyAc4Decoder {
                 bitRate = bitRate,
                 isSimulated = false,
                 jocVersion = "EAC3 Core via FFmpeg Software"
+            )
+        } finally {
+            tempInput.delete()
+        }
+    }
+
+    /**
+     * Fallback decoder for Dolby TrueHD using FFmpeg.
+     * Produces a WAV file at [outputPcmFile].
+     */
+    suspend fun decodeTrueHdSoftware(
+        context: Context,
+        inputUri: Uri,
+        outputPcmFile: File,
+        targetBitsPerSample: Int,
+        targetChannelCount: Int? = null,
+        onProgress: suspend (Float) -> Unit,
+        onStatusUpdate: suspend (String) -> Unit
+    ): DecodedMetadata = withContext(Dispatchers.IO) {
+        withContext(Dispatchers.Main) {
+            onStatusUpdate("TrueHD · FFmpeg software decoder")
+        }
+        val tempInput = SoftwareDecoderHelper.copyUriToTemp(context, inputUri, "truehd_input.mlp")
+        try {
+            // Probe metadata first
+            val probeSession = FFprobeKit.execute(
+                "-v quiet -print_format json -show_streams \"${tempInput.absolutePath}\""
+            )
+            var channels = 8; var sampleRate = 48000; var durationUs = 0L; var bitRate = 3000000
+            try {
+                val output = probeSession.output ?: ""
+                val chMatch = Regex("\"channels\"\\s*:\\s*(\\d+)").find(output)
+                val srMatch = Regex("\"sample_rate\"\\s*:\\s*\"(\\d+)\"").find(output)
+                val durMatch = Regex("\"duration\"\\s*:\\s*\"([0-9.]+)\"").find(output)
+                val brMatch = Regex("\"bit_rate\"\\s*:\\s*\"(\\d+)\"").find(output)
+                channels = chMatch?.groupValues?.get(1)?.toIntOrNull() ?: channels
+                sampleRate = srMatch?.groupValues?.get(1)?.toIntOrNull() ?: sampleRate
+                durationUs = ((durMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0) * 1_000_000).toLong()
+                bitRate = brMatch?.groupValues?.get(1)?.toIntOrNull() ?: bitRate
+            } catch (_: Exception) {}
+
+            val durationMs = durationUs / 1000.0
+            val pcmEncoding = when (targetBitsPerSample) { 24 -> "pcm_s24le"; 32 -> "pcm_s32le"; else -> "pcm_s16le" }
+            val acArg = if (targetChannelCount != null) "-ac $targetChannelCount " else ""
+            val cmd = "-y -i \"${tempInput.absolutePath}\" -vn $acArg-c:a $pcmEncoding -ar $sampleRate \"${outputPcmFile.absolutePath}\""
+            
+            var currentPct = 0f
+            val session = FFmpegKit.executeAsync(cmd,
+                { /* completion — handled below */ },
+                { /* log */ },
+                { stats ->
+                    if (durationMs > 0) {
+                        currentPct = (stats.time / durationMs).toFloat().coerceIn(0f, 1f)
+                    }
+                }
+            )
+            
+            while (!session.state.name.equals("COMPLETED") && !session.state.name.equals("FAILED") && !session.state.name.equals("KILLED")) {
+                yield()
+                delay(150)
+                withContext(Dispatchers.Main) {
+                    onProgress(currentPct)
+                }
+            }
+            
+            if (!ReturnCode.isSuccess(session.returnCode)) {
+                throw IOException("FFmpeg TrueHD decode failed: ${session.failStackTrace}")
+            }
+            withContext(Dispatchers.Main) {
+                onProgress(1f)
+            }
+            if (outputPcmFile.exists() && outputPcmFile.length() > 44) {
+                WavHelper.updateWavHeaderSizes(outputPcmFile, outputPcmFile.length() - 44)
+            }
+            
+            DecodedMetadata(
+                mimeType = "audio/truehd",
+                channelCount = channels,
+                sampleRate = sampleRate,
+                durationUs = durationUs,
+                profile = "Dolby TrueHD Software Decode (${channels}ch)",
+                bitDepth = targetBitsPerSample,
+                bitRate = bitRate,
+                isSimulated = false,
+                jocVersion = "TrueHD via FFmpeg Software"
             )
         } finally {
             tempInput.delete()

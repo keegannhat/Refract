@@ -27,7 +27,8 @@ object SoftwareDecoderHelper {
                 val tempFile = copyUriToTemp(context, uri, "probe_detect.tmp")
                 val probeSession = FFprobeKit.execute("-v quiet -print_format json -show_streams \"${tempFile.absolutePath}\"")
                 val out = probeSession.output ?: ""
-                if (out.contains("\"codec_name\": \"eac3\"", ignoreCase = true)) key = "eac3"
+                if (out.contains("\"codec_name\": \"truehd\"", ignoreCase = true)) key = "truehd"
+                else if (out.contains("\"codec_name\": \"eac3\"", ignoreCase = true)) key = "eac3"
                 else if (out.contains("\"codec_name\": \"ac4\"", ignoreCase = true)) key = "ac4"
                 
                 if (tempFile.exists()) tempFile.delete()
@@ -40,10 +41,13 @@ object SoftwareDecoderHelper {
         val lower = fileName.lowercase()
         val ext = lower.substringAfterLast('.', "")
         return when {
+            mimeType?.contains("truehd", ignoreCase = true) == true || mimeType?.contains("true-hd", ignoreCase = true) == true -> "truehd"
             mimeType?.contains("eac3", ignoreCase = true) == true -> "eac3"
             mimeType?.contains("ac4", ignoreCase = true) == true -> "ac4"
+            ext in setOf("mlp") -> "truehd"
             ext in setOf("ec3", "eac3") -> "eac3"
             ext == "ac4" -> "ac4"
+            ext in setOf("mkv", "mka", "m4a") -> "unknown"
             else -> "unknown"
         }
     }

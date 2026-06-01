@@ -428,7 +428,8 @@ fun DecoderAppScreen(
                                 onSelectPresentation = { viewModel.switchPresentation(it) },
                                 speakerConfig = speakerConfig,
                                 onSpeakerConfigChange = { viewModel.setSpeakerConfig(it) },
-                                isIms = isAc4Ims
+                                isIms = isAc4Ims,
+                                isTrueHd = state.metadata.mimeType.contains("truehd", true)
                             )
                         }
 
@@ -1097,7 +1098,8 @@ fun FileSelectedCard(
     onSelectPresentation: (Int) -> Unit,
     speakerConfig: String,
     onSpeakerConfigChange: (String) -> Unit,
-    isIms: Boolean = false
+    isIms: Boolean = false,
+    isTrueHd: Boolean = false
 ) {
     val isBinauralSource = info.channelCount == 2 && name.contains(".ac4", ignoreCase = true)
 
@@ -1298,31 +1300,49 @@ fun FileSelectedCard(
                 layoutOptions.forEach { (layout, disabled) ->
                     val isLayoutActive = speakerConfig == layout
                     val tooHighForBinaural = isBinauralSource && layout != "Mono" && layout != "Stereo" && layout != "5.1"
-                    val isButtonEnabled = !disabled
+                    val tooHighForTrueHd = isTrueHd && layout == "7.1.4"
+                    val isButtonEnabled = !disabled && !tooHighForTrueHd
                     
                     Button(
                         onClick = { if (isButtonEnabled && !tooHighForBinaural) onSpeakerConfigChange(layout) },
                         enabled = isButtonEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isLayoutActive) CyberCyan else (if (tooHighForBinaural) Color.Transparent else Color(0xFF131A26)),
-                            contentColor = if (isLayoutActive) SlateGrayBg else (if (tooHighForBinaural) CoolGrayText.copy(alpha = 0.4f) else IceWhite),
+                            containerColor = if (isLayoutActive) CyberCyan else (if (tooHighForBinaural || tooHighForTrueHd) Color.Transparent else Color(0xFF131A26)),
+                            contentColor = if (isLayoutActive) SlateGrayBg else (if (tooHighForBinaural || tooHighForTrueHd) CoolGrayText.copy(alpha = 0.4f) else IceWhite),
                             disabledContainerColor = Color(0xFF131A26).copy(alpha = 0.5f),
                             disabledContentColor = IceWhite.copy(alpha = 0.35f)
                         ),
                         modifier = Modifier
                             .weight(1f)
                             .height(34.dp)
-                            .then(if (disabled) Modifier.alpha(0.35f) else Modifier),
+                            .then(if (disabled || tooHighForTrueHd) Modifier.alpha(0.35f) else Modifier),
                         contentPadding = PaddingValues(0.dp),
                         shape = RoundedCornerShape(6.dp),
-                        border = if (tooHighForBinaural && !disabled) BorderStroke(1.dp, SurfaceBorder.copy(alpha = 0.5f)) else null
+                        border = if ((tooHighForBinaural || tooHighForTrueHd) && !disabled) BorderStroke(1.dp, SurfaceBorder.copy(alpha = 0.5f)) else null
                     ) {
                         Text(layout, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            if (isIms) {
+            if (isTrueHd) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "TrueHD limit warning",
+                        tint = PurpleGlow,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Dolby TrueHD software decode is limited to 7.1 bed elements layout.",
+                        color = PurpleGlow,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else if (isIms) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
