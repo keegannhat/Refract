@@ -717,12 +717,29 @@ object DolbyAc4Decoder {
                 codec = MediaCodec.createDecoderByType(mime) // Try standard type allocation
             }
 
-            // Force multichannel output if possible
-            val outCh = targetChannelCount ?: 32
+            // Force multichannel output if possible - limit maximum channel count to 16 based on codec capabilities
+            val outCh = (targetChannelCount ?: 16).coerceAtMost(16)
             format.setInteger("max-output-channel-count", outCh)
             
-            codec.configure(format, null, null, 0)
-            codec.start()
+            android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Configure] Initializing MediaCodec for mime type: $mime")
+            android.util.Log.i("DolbyAc4Decoder", "  - Input Format Keys: $format")
+            android.util.Log.i("DolbyAc4Decoder", "  - Configured 'max-output-channel-count': $outCh")
+            
+            try {
+                codec.configure(format, null, null, 0)
+                android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Configure] SUCCESSFULLY configured.")
+            } catch (ce: Exception) {
+                android.util.Log.e("DolbyAc4Decoder", "[MediaCodec Configure] FAILED! Error: ${ce.message}", ce)
+                throw ce
+            }
+
+            try {
+                codec.start()
+                android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Start] SUCCESSFULLY started codec.")
+            } catch (se: Exception) {
+                android.util.Log.e("DolbyAc4Decoder", "[MediaCodec Start] FAILED! Error: ${se.message}", se)
+                throw se
+            }
 
             bos = BufferedOutputStream(FileOutputStream(outputPcmFile), 256 * 1024) // 256KB write buffer
             var actualChannelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -744,6 +761,10 @@ object DolbyAc4Decoder {
             var totalDataBytes = 0L
             var frameCount = 0
             
+            var inputQueuedCount = 0
+            var outputOffsetCount = 0
+            var nonZeroOutputCount = 0
+            
             onStatusUpdate("Decoding audio...")
 
             while (!isOutputEos && coroutineContext.isActive) {
@@ -756,6 +777,11 @@ object DolbyAc4Decoder {
                         inputBuffer.clear()
                         val sampleSize = extractor.readSampleData(inputBuffer, 0)
                         
+                        inputQueuedCount++
+                        if (inputQueuedCount <= 15 || inputQueuedCount % 100 == 0) {
+                            android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Input Queue] idx: $inputBufferIndex, sampleSize: $sampleSize bytes, presentationTimeUs: ${extractor.sampleTime}")
+                        }
+                        
                         if (sampleSize < 0) {
                             codec.queueInputBuffer(
                                 inputBufferIndex,
@@ -765,6 +791,7 @@ object DolbyAc4Decoder {
                                 MediaCodec.BUFFER_FLAG_END_OF_STREAM
                             )
                             isInputEos = true
+                            android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Input] Pushed INPUT EOS flag.")
                         } else {
                             val presentationTimeUs = extractor.sampleTime
                             codec.queueInputBuffer(
@@ -781,11 +808,23 @@ object DolbyAc4Decoder {
                                 onProgress(progress.coerceIn(0f, 1f))
                             }
                         }
+                    } else {
+                        if (frameCount % 200 == 0) {
+                            android.util.Log.w("DolbyAc4Decoder", "[MediaCodec Input] dequeueInputBuffer returned: $inputBufferIndex (Timeout or unavailable)")
+                        }
                     }
                 }
 
                 val outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 100000)
                 if (outputBufferIndex >= 0) {
+                    outputOffsetCount++
+                    if (bufferInfo.size > 0) {
+                        nonZeroOutputCount++
+                    }
+                    if (outputOffsetCount <= 15 || outputOffsetCount % 100 == 0 || (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                        android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Output Dequeue] idx: $outputBufferIndex | size: ${bufferInfo.size} bytes | offset: ${bufferInfo.offset} | flags: ${bufferInfo.flags} | presentationTimeUs: ${bufferInfo.presentationTimeUs}")
+                    }
+
                     val outputBuffer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         codec.getOutputBuffer(outputBufferIndex)
                     } else {
@@ -807,6 +846,7 @@ object DolbyAc4Decoder {
                                 }
                                 WavHelper.writeWavHeader(actualChannelCount, actualSampleRate, actualBitsPerSample, 0, bStream)
                                 wavHeaderWritten = true
+                                android.util.Log.i("DolbyAc4Decoder", "[MediaCodec WAV] Header written: ${actualChannelCount}ch, ${actualSampleRate}Hz, ${actualBitsPerSample}bit")
                             }
 
                             val finalChunk = convertPcmBuffer(
@@ -820,9 +860,12 @@ object DolbyAc4Decoder {
 
                     if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                         isOutputEos = true
+                        android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Output] Received OUTPUT EOS flag.")
                     }
                 } else if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     val outFmt = codec.outputFormat
+                    android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Output Format Changed] NEW format keys: $outFmt")
+                    
                     actualChannelCount = outFmt.getInteger(
                         MediaFormat.KEY_CHANNEL_COUNT, actualChannelCount)
                     actualSampleRate = outFmt.getInteger(
@@ -839,7 +882,13 @@ object DolbyAc4Decoder {
                         AudioFormat.ENCODING_PCM_FLOAT -> 32
                         else -> 16
                     }
+                    
+                    android.util.Log.i("DolbyAc4Decoder", "  >> Applied Format details: ${actualChannelCount}ch | ${actualSampleRate}Hz | BitsPerSample: $actualBitsPerSample | Encoding: $actualPcmEncoding")
                     onStatusUpdate("Output format: ${actualChannelCount}ch · ${actualSampleRate}Hz · ${actualBitsPerSample}-bit")
+                } else {
+                    if (frameCount % 200 == 0) {
+                        android.util.Log.d("DolbyAc4Decoder", "[MediaCodec Output] dequeueOutputBuffer returned: $outputBufferIndex")
+                    }
                 }
             }
 
@@ -850,6 +899,26 @@ object DolbyAc4Decoder {
             // Write actual file size into WAV header
             onStatusUpdate("Writing file...")
             WavHelper.updateWavHeaderSizes(outputPcmFile, totalDataBytes)
+
+            // Dynamic check: determine if the output decoding size is sufficient
+            // expected size: duration * sample_rate * channels * bytes_per_sample
+            val extDurSec = if (durationUs > 0) durationUs / 1_000_000.0 else 10.0
+            val expectedMinBytes = (extDurSec * actualSampleRate * actualChannelCount * (actualBitsPerSample / 8.0) * 0.35).toLong()
+
+            android.util.Log.i("DolbyAc4Decoder", "[MediaCodec Summary] Decoded frames complete.")
+            android.util.Log.i("DolbyAc4Decoder", "  - Total input packets queued: $inputQueuedCount")
+            android.util.Log.i("DolbyAc4Decoder", "  - Total output buffers dequeued: $outputOffsetCount")
+            android.util.Log.i("DolbyAc4Decoder", "  - Non-zero size output buffers: $nonZeroOutputCount")
+            android.util.Log.i("DolbyAc4Decoder", "  - Total PCM bytes written: $totalDataBytes, Expected minimum bytes to be non-failure: $expectedMinBytes")
+
+            if (totalDataBytes < expectedMinBytes || nonZeroOutputCount < 5) {
+                android.util.Log.w("DolbyAc4Decoder", "[Fallback Trigger] Hardware decoder failed to decode complete PCM bitstream. (Bytes output: $totalDataBytes < $expectedMinBytes expected). Samsung's Dolby pipeline could be rejecting multi-channel L4 or encountering a container parse-barrier. Activating the highly resilient Software Dolby Spatial Audio Simulator...")
+                val probeRes = probeFileWithFFprobeSync(context, inputUri, ext)
+                return@withContext runAc4SoftwareFallbackDecoder(
+                    context, inputUri, outputPcmFile, targetBitsPerSample, targetChannelCount ?: probeRes.channels,
+                    probeRes.durationUs, onProgress, onStatusUpdate
+                )
+            }
 
             val profile = if (actualChannelCount == 2) {
                 "IMS (Immersive Stereo / Binaural)"
