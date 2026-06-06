@@ -108,7 +108,7 @@ object DolbyAc4Decoder {
             val probeSession = FFprobeKit.execute("-v quiet -print_format json -show_streams \"${tempFile.absolutePath}\"")
             val out = probeSession.output ?: ""
             
-            val hasAc4 = out.contains("\"codec_name\": \"ac4\"", ignoreCase = true)
+            val hasAc4 = out.contains("\"codec_name\": \"ac4\"", ignoreCase = true) || ext == "ac4" || ext == "ims"
             val hasEac3 = out.contains("\"codec_name\": \"eac3\"", ignoreCase = true)
             val hasTrueHd = out.contains("\"codec_name\": \"truehd\"", ignoreCase = true)
             
@@ -239,11 +239,11 @@ object DolbyAc4Decoder {
                 val probeRes = probeFileWithFFprobeSync(context, fileUri, ext)
                 if (probeRes.hasAc4) {
                     android.util.Log.i("DolbyAc4Decoder", "[MediaExtractor Fallback] FFprobe confirmed AC-4 stream resides in file. Synthesizing AC-4 metadata...")
-                    val isIms = probeRes.channels == 2
+                    val isIms = ext == "ims" || fileName.lowercase(java.util.Locale.getDefault()).contains("binaural")
                     val profile = if (isIms) "AC-4 IMS (Stereo Binaural)" else "AC-4 L4 (Multichannel Surround, ${probeRes.channels}ch)"
                     return DecodedMetadata(
                         mimeType = "audio/ac4",
-                        channelCount = probeRes.channels,
+                        channelCount = if (isIms) 2 else probeRes.channels,
                         sampleRate = probeRes.sampleRate,
                         durationUs = probeRes.durationUs,
                         profile = profile,
@@ -681,7 +681,13 @@ object DolbyAc4Decoder {
             if (trackIndex == -1 || format == null || mime == null) {
                 android.util.Log.w("DolbyAc4Decoder", "[Decoder] MediaExtractor found no standard tracks. Probing with FFprobe...")
                 val probeRes = probeFileWithFFprobeSync(context, inputUri, ext)
-                if (probeRes.hasEac3) {
+                if (probeRes.hasAc4) {
+                    android.util.Log.i("DolbyAc4Decoder", "[Decoder Fallback] FFprobe confirmed AC-4 stream exists! Entering AC-4 Software Fallback...")
+                    return@withContext runAc4SoftwareFallbackDecoder(
+                        context, inputUri, outputPcmFile, targetBitsPerSample, targetChannelCount ?: probeRes.channels,
+                        probeRes.durationUs, onProgress, onStatusUpdate
+                    )
+                } else if (probeRes.hasEac3) {
                     android.util.Log.i("DolbyAc4Decoder", "[Decoder Fallback] FFprobe confirmed EAC3 stream. Redirecting to Software EAC3...")
                     return@withContext decodeEac3Software(
                         context, inputUri, outputPcmFile, targetBitsPerSample, targetChannelCount, onProgress, onStatusUpdate
@@ -934,7 +940,12 @@ object DolbyAc4Decoder {
         } catch (e: Exception) {
             android.util.Log.e("DolbyAc4Decoder", "Hardware decoding failed or unsupported container/track: ${e.message}", e)
             val probeRes = probeFileWithFFprobeSync(context, inputUri, ext)
-            if (probeRes.hasEac3) {
+            if (probeRes.hasAc4) {
+                return@withContext runAc4SoftwareFallbackDecoder(
+                    context, inputUri, outputPcmFile, targetBitsPerSample, targetChannelCount ?: probeRes.channels,
+                    probeRes.durationUs, onProgress, onStatusUpdate
+                )
+            } else if (probeRes.hasEac3) {
                 return@withContext decodeEac3Software(
                     context, inputUri, outputPcmFile, targetBitsPerSample, targetChannelCount, onProgress, onStatusUpdate
                 )
