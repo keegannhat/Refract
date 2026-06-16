@@ -52,6 +52,12 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
         StereoBinauralWav
     }
 
+    enum class ExportCodec {
+        FLAC,
+        OPUS,
+        AAC
+    }
+
     enum class HardwareEnforcementLevel {
         FULL,     // All relevant codecs have hardware decoders
         PARTIAL,  // At least one has hardware, but not all
@@ -148,6 +154,9 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
 
     private val _exportFlacStereo = MutableStateFlow(false)
     val exportFlacStereo: StateFlow<Boolean> = _exportFlacStereo.asStateFlow()
+
+    private val _exportCodec = MutableStateFlow(ExportCodec.FLAC)
+    val exportCodec: StateFlow<ExportCodec> = _exportCodec.asStateFlow()
 
     private val _showAtmosFallbackBanner = MutableStateFlow(false)
     val showAtmosFallbackBanner: StateFlow<Boolean> = _showAtmosFallbackBanner.asStateFlow()
@@ -316,6 +325,12 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
         } catch (e: Exception) {
             ExportMode.StereoBinauralWav
         }
+        val codecName = prefs.getString("export_codec", ExportCodec.FLAC.name)
+        _exportCodec.value = try {
+            ExportCodec.valueOf(codecName ?: ExportCodec.FLAC.name)
+        } catch (e: Exception) {
+            ExportCodec.FLAC
+        }
     }
 
     fun setWaveformMode(enabled: Boolean) {
@@ -350,6 +365,11 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
     fun setExportFlacStereo(enabled: Boolean) {
         _exportFlacStereo.value = enabled
         prefs.edit().putBoolean("export_flac_stereo", enabled).apply()
+    }
+
+    fun setExportCodec(codec: ExportCodec) {
+        _exportCodec.value = codec
+        prefs.edit().putString("export_codec", codec.name).apply()
     }
 
     fun dismissFallbackBanner() {
@@ -395,6 +415,8 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
             val files = exportsDir.listFiles { file ->
                 file.isFile && (file.extension.equals("wav", ignoreCase = true) || 
                                 file.extension.equals("flac", ignoreCase = true) ||
+                                file.extension.equals("ogg", ignoreCase = true) ||
+                                file.extension.equals("m4a", ignoreCase = true) ||
                                 file.extension.equals("zip", ignoreCase = true) ||
                                 file.extension.equals("txt", ignoreCase = true))
             }?.sortedByDescending { it.lastModified() } ?: emptyList()
@@ -742,52 +764,84 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                   when (_exportMode.value) {
 
                     ExportMode.WaveMultichannel -> {
-                      val dest = File(exportsDir, "${clearName}_multichannel.wav")
-                      cachePcmFile.copyTo(dest, overwrite = true)
-                      finalFiles.add(dest)
+                      val codec = _exportCodec.value
+                      if (codec == ExportCodec.FLAC) {
+                        val dest = File(exportsDir, "${clearName}_multichannel.wav")
+                        cachePcmFile.copyTo(dest, overwrite = true)
+                        finalFiles.add(dest)
+                      } else {
+                        val ext = if (codec == ExportCodec.OPUS) "ogg" else "m4a"
+                        val dest = File(exportsDir, "${clearName}_multichannel.$ext")
+                        withContext(Dispatchers.Main) {
+                          _uiState.value = processingState.copy(
+                            progress = 0.97f, status = "Encoding multichannel..."
+                          )
+                        }
+                        val ok = FfmpegExportHelper.encodeMultichannel(
+                          cachePcmFile, dest,
+                          _defaultSampleRate.value, activeMetadata.channelCount,
+                          codecType = codec.name
+                        )
+                        if (ok) finalFiles.add(dest)
+                        else throw Exception("Multichannel encode to ${codec.name} failed")
+                      }
                     }
 
                     ExportMode.MonoWavCustomSplit -> {
+                      val codec = _exportCodec.value
+                      val codecExt = when (codec) {
+                        ExportCodec.OPUS -> "OGG"
+                        ExportCodec.AAC -> "AAC"
+                        else -> "WAV"
+                      }
                       withContext(Dispatchers.Main) {
                         _uiState.value = processingState.copy(
-                          progress = 0.97f, status = "Splitting channels...")
+                          progress = 0.97f, status = "Splitting to $codecExt channels...")
                       }
                       val splits = FfmpegExportHelper.splitChannels(
                         cachePcmFile, exportsDir, clearName,
                         activeMetadata.channelCount,
                         _defaultSampleRate.value, _defaultBitDepth.value,
-                        asFlac = false
+                        asFlac = false,
+                        codecType = codec.name
                       ) { done, total ->
                         com.example.DecodingForegroundService.updateProgress(
                           context, 97 + (done * 2 / total),
-                          "Splitting channel $done of $total...")
+                          "$codecExt split $done/$total channels...")
                       }
                       finalFiles.addAll(splits)
                     }
 
                     ExportMode.MonoFlacCustomSplit -> {
+                      val codec = _exportCodec.value
+                      val codecName = when (codec) {
+                        ExportCodec.OPUS -> "Opus"
+                        ExportCodec.AAC -> "AAC"
+                        else -> "FLAC"
+                      }
                       withContext(Dispatchers.Main) {
                         _uiState.value = processingState.copy(
-                          progress = 0.97f, status = "Encoding FLAC channels...")
+                          progress = 0.97f, status = "Encoding $codecName channels...")
                       }
-                      val tempDir = File(context.cacheDir, "flac_tmp").apply { mkdirs() }
-                      val flacs = FfmpegExportHelper.splitChannels(
+                      val tempDir = File(context.cacheDir, "split_tmp").apply { mkdirs() }
+                      val files = FfmpegExportHelper.splitChannels(
                         cachePcmFile, tempDir, clearName,
                         activeMetadata.channelCount,
                         _defaultSampleRate.value, _defaultBitDepth.value,
-                        asFlac = true
+                        asFlac = (codec == ExportCodec.FLAC),
+                        codecType = codec.name
                       ) { done, total ->
                         com.example.DecodingForegroundService.updateProgress(
                           context, 97 + (done * 2 / total),
-                          "FLAC $done/$total channels...")
+                          "$codecName $done/$total channels...")
                       }
                       withContext(Dispatchers.Main) {
                         _uiState.value = processingState.copy(
                           progress = 0.995f, status = "Compressing to ZIP...")
                       }
                       val zip = File(exportsDir,
-                        "${clearName}_SplitFLAC_${activeMetadata.channelCount}ch.zip")
-                      FfmpegExportHelper.zipFiles(flacs, zip)
+                        "${clearName}_Split${codecName}_${activeMetadata.channelCount}ch.zip")
+                      FfmpegExportHelper.zipFiles(files, zip)
                       finalFiles.add(zip)
                     }
 
@@ -796,13 +850,19 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                         _uiState.value = processingState.copy(
                           progress = 0.97f, status = "Downmixing to stereo...")
                       }
+                      val codec = _exportCodec.value
                       val useFLAC = _exportFlacStereo.value
-                      val ext2 = if (useFLAC) "flac" else "wav"
+                      val ext2 = when (codec) {
+                        ExportCodec.OPUS -> "ogg"
+                        ExportCodec.AAC -> "m4a"
+                        else -> if (useFLAC) "flac" else "wav"
+                      }
                       val dest = File(exportsDir, "${clearName}_stereo.$ext2")
                       val ok = FfmpegExportHelper.stereoDownmix(
                         cachePcmFile, dest,
                         _defaultSampleRate.value, _defaultBitDepth.value,
-                        asFlac = useFLAC
+                        asFlac = useFLAC,
+                        codecType = codec.name
                       )
                       if (ok) finalFiles.add(dest)
                       else throw Exception(
@@ -825,6 +885,8 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                         val mime = when (file.extension.lowercase(Locale.getDefault())) {
                             "wav" -> "audio/wav"
                             "flac" -> "audio/flac"
+                            "ogg" -> "audio/ogg"
+                            "m4a" -> "audio/mp4"
                             "zip" -> "application/zip"
                             "txt" -> "text/plain"
                             else -> "application/octet-stream"

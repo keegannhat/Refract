@@ -27,6 +27,7 @@ object FfmpegExportHelper {
         sampleRate: Int,
         bitsPerSample: Int,
         asFlac: Boolean,
+        codecType: String = "FLAC",
         onChannelDone: (Int, Int) -> Unit = { _, _ -> }
     ): List<File> {
         // We will output stereo pairs
@@ -81,9 +82,16 @@ object FfmpegExportHelper {
             }
         }
         if (!outputDir.exists()) outputDir.mkdirs()
-        val ext = if (asFlac) "flac" else "wav"
-        val codec = if (asFlac) "flac -compression_level 8"
-                    else "pcm_s${bitsPerSample}le"
+        val ext = when (codecType) {
+            "OPUS" -> "ogg"
+            "AAC" -> "m4a"
+            else -> if (asFlac) "flac" else "wav"
+        }
+        val codec = when (codecType) {
+            "OPUS" -> "libopus -b:a 256k -vbr on"
+            "AAC" -> "aac -b:a 256k"
+            else -> if (asFlac) "flac -compression_level 8" else "pcm_s${bitsPerSample}le"
+        }
         val out = mutableListOf<File>()
         defs.forEachIndexed { idx, (name, channels) ->
             val f = File(outputDir, "${baseName}_${name}.$ext")
@@ -106,13 +114,37 @@ object FfmpegExportHelper {
         outputFile: File,
         sampleRate: Int,
         bitsPerSample: Int,
-        asFlac: Boolean
+        asFlac: Boolean,
+        codecType: String = "FLAC"
     ): Boolean {
-        val codec = if (asFlac) "flac -compression_level 8"
-                    else "pcm_s${bitsPerSample}le"
+        val codec = when (codecType) {
+            "OPUS" -> "libopus -b:a 256k -vbr on"
+            "AAC" -> "aac -b:a 256k"
+            else -> if (asFlac) "flac -compression_level 8" else "pcm_s${bitsPerSample}le"
+        }
         return run(
             "-y -i \"${inputFile.absolutePath}\" " +
             "-ac 2 -ar $sampleRate -c:a $codec " +
+            "\"${outputFile.absolutePath}\""
+        )
+    }
+
+    fun encodeMultichannel(
+        inputFile: File,
+        outputFile: File,
+        sampleRate: Int,
+        channelCount: Int,
+        codecType: String
+    ): Boolean {
+        val bitrateKbps = channelCount * 128
+        val codecArgs = when (codecType) {
+            "OPUS" -> "-c:a libopus -b:a ${bitrateKbps}k -vbr on"
+            "AAC" -> "-c:a aac -b:a ${bitrateKbps}k"
+            else -> ""
+        }
+        return run(
+            "-y -i \"${inputFile.absolutePath}\" " +
+            "-ar $sampleRate $codecArgs " +
             "\"${outputFile.absolutePath}\""
         )
     }

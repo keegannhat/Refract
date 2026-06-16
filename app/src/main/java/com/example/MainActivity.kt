@@ -158,6 +158,7 @@ fun DecoderAppScreen(
     val defaultSampleRate by viewModel.defaultSampleRate.collectAsState()
     val exportLocationLabel by viewModel.exportLocationLabel.collectAsState()
     val isLoudnessReportEnabled by viewModel.isLoudnessReportEnabled.collectAsState()
+    val exportCodec by viewModel.exportCodec.collectAsState()
     val meterLevels by viewModel.meterLevels.collectAsState()
     val lkfsValue by viewModel.lkfsValue.collectAsState()
     val truePeakValue by viewModel.truePeakValue.collectAsState()
@@ -541,11 +542,13 @@ fun DecoderAppScreen(
                 defaultSampleRate = defaultSampleRate,
                 exportLocation = exportLocationLabel,
                 isLoudnessReportEnabled = isLoudnessReportEnabled,
+                exportCodec = exportCodec,
                 vulkanAvailable = vulkanAvailable,
                 onToggleWaveform = { viewModel.setWaveformMode(it) },
                 onSelectBitDepth = { viewModel.setDefaultBitDepth(it) },
                 onSelectSampleRate = { viewModel.setDefaultSampleRate(it) },
                 onToggleLoudnessReport = { viewModel.setLoudnessReportEnabled(it) },
+                onSelectExportCodec = { viewModel.setExportCodec(it) },
                 onSelectExportFolder = { exportFolderLauncher.launch(null) },
                 onClearHistory = {
                     viewModel.clearHistory()
@@ -2219,11 +2222,13 @@ fun SystemSettingsDialog(
     defaultSampleRate: Int,
     exportLocation: String,
     isLoudnessReportEnabled: Boolean,
+    exportCodec: AudioDecoderViewModel.ExportCodec,
     vulkanAvailable: Boolean,
     onToggleWaveform: (Boolean) -> Unit,
     onSelectBitDepth: (Int) -> Unit,
     onSelectSampleRate: (Int) -> Unit,
     onToggleLoudnessReport: (Boolean) -> Unit,
+    onSelectExportCodec: (AudioDecoderViewModel.ExportCodec) -> Unit,
     onSelectExportFolder: () -> Unit,
     onClearHistory: () -> Unit,
     onDismiss: () -> Unit
@@ -2306,6 +2311,38 @@ fun SystemSettingsDialog(
                                 contentPadding = PaddingValues(0.dp)
                             ) {
                                 Text("${freq / 1000} kHz HD", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = SurfaceBorder)
+
+                // Export Codecs selection section
+                Column {
+                    Text("Export Codecs", color = IceWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            AudioDecoderViewModel.ExportCodec.FLAC to "FLAC",
+                            AudioDecoderViewModel.ExportCodec.OPUS to "Opus",
+                            AudioDecoderViewModel.ExportCodec.AAC to "AAC"
+                        ).forEach { (codecVal, label) ->
+                            val isChosen = exportCodec == codecVal
+                            Button(
+                                onClick = { onSelectExportCodec(codecVal) },
+                                modifier = Modifier.weight(1f).height(32.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isChosen) CyberCyan else Color(0xFF131A26),
+                                    contentColor = if (isChosen) SlateGrayBg else IceWhite
+                                ),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text(
+                                    text = if (codecVal == AudioDecoderViewModel.ExportCodec.FLAC) "$label (default)" else label,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
