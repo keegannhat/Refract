@@ -428,8 +428,7 @@ fun DecoderAppScreen(
                                 onSelectPresentation = { viewModel.switchPresentation(it) },
                                 speakerConfig = speakerConfig,
                                 onSpeakerConfigChange = { viewModel.setSpeakerConfig(it) },
-                                isIms = isAc4Ims,
-                                isTrueHd = state.metadata.mimeType.contains("truehd", true) || state.metadata.mimeType.contains("true-hd", true)
+                                isIms = isAc4Ims
                             )
                         }
 
@@ -989,7 +988,7 @@ fun FileDropzoneSelector(
                 Spacer(modifier = Modifier.height(4.dp))
                 
                 Text(
-                    text = "Supports .ac4 · .ec3 · .thd · .mlp · .mkv · .mp4 · .m4a",
+                    text = "Supports .ac4, .ec3, .mp4, .m4a, and .ts containers",
                     color = CoolGrayText,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal,
@@ -1098,8 +1097,7 @@ fun FileSelectedCard(
     onSelectPresentation: (Int) -> Unit,
     speakerConfig: String,
     onSpeakerConfigChange: (String) -> Unit,
-    isIms: Boolean = false,
-    isTrueHd: Boolean = false
+    isIms: Boolean = false
 ) {
     val isBinauralSource = info.channelCount == 2 && name.contains(".ac4", ignoreCase = true)
 
@@ -1168,12 +1166,7 @@ fun FileSelectedCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Profile Standard:", color = CoolGrayText, fontSize = 11.sp)
-                        val profileColor = when {
-                            info.mimeType.contains("truehd", ignoreCase = true) || info.mimeType.contains("true-hd", ignoreCase = true) -> CyberCyan
-                            info.mimeType.contains("dts", ignoreCase = true) -> Color(0xFFFFB300)
-                            else -> PurpleGlow
-                        }
-                        Text(info.profile, color = profileColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text(info.profile, color = PurpleGlow, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
 
                     Row(
@@ -1188,8 +1181,8 @@ fun FileSelectedCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Export Bit Depth:", color = CoolGrayText, fontSize = 11.sp)
-                        Text("${info.bitDepth}-bit PCM (export setting)", color = IceWhite, fontSize = 11.sp)
+                        Text("Decoded Bit Depth:", color = CoolGrayText, fontSize = 11.sp)
+                        Text("${info.bitDepth}-bit uncompressed PCM", color = IceWhite, fontSize = 11.sp)
                     }
 
                     Row(
@@ -1197,31 +1190,15 @@ fun FileSelectedCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Bitstream Channel layout:", color = CoolGrayText, fontSize = 11.sp)
-                        val channelLabel = when (info.channelCount) {
-                            1  -> "1ch · Mono"
-                            2  -> "2ch · Stereo"
-                            6  -> "6ch · 5.1 Surround"
-                            8  -> "8ch · 7.1 Surround"
-                            12 -> "12ch · 7.1.4 Immersive"
-                            16 -> "16ch · 9.1.6 Immersive"
-                            else -> "${info.channelCount}ch"
-                        }
-                        Text(channelLabel, color = IceWhite, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("${info.channelCount} Channels (Atmos Matrix)", color = IceWhite, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val techLabel = when {
-                            info.mimeType.contains("truehd", ignoreCase = true) || info.mimeType.contains("true-hd", ignoreCase = true) -> "Lossless Format:"
-                            info.mimeType.contains("eac3", ignoreCase = true) -> "Object Coding:"
-                            info.mimeType.contains("dts", ignoreCase = true) -> "DTS Profile:"
-                            else -> "Stream Standard:"
-                        }
-                        val techValue = if (info.jocVersion.isNotBlank()) info.jocVersion else info.mimeType
-                        Text(techLabel, color = CoolGrayText, fontSize = 11.sp)
-                        Text(techValue, color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("Atmos Master Standard:", color = CoolGrayText, fontSize = 11.sp)
+                        Text(info.jocVersion, color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
 
                     Row(
@@ -1236,13 +1213,13 @@ fun FileSelectedCard(
             }
 
             // Dolby Presentation Selector Block (Only shown for AC-4 stream files loaded)
-            if (info.mimeType.equals("audio/ac4", ignoreCase = true) && availablePresentations.isNotEmpty()) {
+            if (info.mimeType.contains("ac4", ignoreCase = true) && availablePresentations.size > 1) {
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider(color = SurfaceBorder)
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
-                    text = "AC-4 PRESENTATION STREAMS (${availablePresentations.size})",
+                    text = "DOLBY AC-4 PROGRAM LIST (${availablePresentations.size})",
                     fontWeight = FontWeight.Bold,
                     color = CyberCyan,
                     fontSize = 11.sp,
@@ -1314,56 +1291,38 @@ fun FileSelectedCard(
                 val layoutOptions = listOf(
                     "Mono"  to false,
                     "Stereo" to false,
-                    "5.1"   to false, // IMS can decode up to 5.1
+                    "5.1"   to isIms,   // disabled when IMS
                     "7.1"   to isIms,
                     "7.1.4" to isIms
                 )
                 layoutOptions.forEach { (layout, disabled) ->
                     val isLayoutActive = speakerConfig == layout
                     val tooHighForBinaural = isBinauralSource && layout != "Mono" && layout != "Stereo" && layout != "5.1"
-                    val tooHighForTrueHd = isTrueHd && layout == "7.1.4"
-                    val isButtonEnabled = !disabled && !tooHighForTrueHd
+                    val isButtonEnabled = !disabled
                     
                     Button(
                         onClick = { if (isButtonEnabled && !tooHighForBinaural) onSpeakerConfigChange(layout) },
                         enabled = isButtonEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isLayoutActive) CyberCyan else (if (tooHighForBinaural || tooHighForTrueHd) Color.Transparent else Color(0xFF131A26)),
-                            contentColor = if (isLayoutActive) SlateGrayBg else (if (tooHighForBinaural || tooHighForTrueHd) CoolGrayText.copy(alpha = 0.4f) else IceWhite),
+                            containerColor = if (isLayoutActive) CyberCyan else (if (tooHighForBinaural) Color.Transparent else Color(0xFF131A26)),
+                            contentColor = if (isLayoutActive) SlateGrayBg else (if (tooHighForBinaural) CoolGrayText.copy(alpha = 0.4f) else IceWhite),
                             disabledContainerColor = Color(0xFF131A26).copy(alpha = 0.5f),
                             disabledContentColor = IceWhite.copy(alpha = 0.35f)
                         ),
                         modifier = Modifier
                             .weight(1f)
                             .height(34.dp)
-                            .then(if (disabled || tooHighForTrueHd) Modifier.alpha(0.35f) else Modifier),
+                            .then(if (disabled) Modifier.alpha(0.35f) else Modifier),
                         contentPadding = PaddingValues(0.dp),
                         shape = RoundedCornerShape(6.dp),
-                        border = if ((tooHighForBinaural || tooHighForTrueHd) && !disabled) BorderStroke(1.dp, SurfaceBorder.copy(alpha = 0.5f)) else null
+                        border = if (tooHighForBinaural && !disabled) BorderStroke(1.dp, SurfaceBorder.copy(alpha = 0.5f)) else null
                     ) {
                         Text(layout, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            if (isTrueHd) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "TrueHD limit warning",
-                        tint = PurpleGlow,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Dolby TrueHD software decode is limited to 7.1 bed elements layout.",
-                        color = PurpleGlow,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            } else if (isIms) {
+            if (isIms) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -1509,14 +1468,21 @@ fun FileSelectedCard(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ExportModeOptionTile(
+                    title = "Stereo Downmix",
+                    desc = "Downmixes discrete sound coordinates into spatialized binaural stereo WAV (Recommended for regular headphones).",
+                    selected = selectedMode == AudioDecoderViewModel.ExportMode.StereoBinauralWav,
+                    onClick = { onModeSelect(AudioDecoderViewModel.ExportMode.StereoBinauralWav) }
+                )
+
+                ExportModeOptionTile(
                     title = "Multichannel WAV",
                     desc = "Generates a single multichannel uncompressed WAV preserving layout mapping coordinates (Ideal for DAW editing).",
                     selected = selectedMode == AudioDecoderViewModel.ExportMode.WaveMultichannel,
                     onClick = { onModeSelect(AudioDecoderViewModel.ExportMode.WaveMultichannel) }
                 )
 
-                val allowSplit = speakerConfig != "Mono" && speakerConfig != "Stereo"
-                val tooltipMsg = if (allowSplit) null else "Select a multichannel layout (5.1 or higher) to enable split export."
+                val allowSplit = info.channelCount > 2
+                val tooltipMsg = if (allowSplit) null else "AC-4 IMS is 2.0 — split export not applicable."
 
                 ExportModeOptionTile(
                     title = "Split WAV (stereo pairs)",
@@ -2382,7 +2348,7 @@ fun SystemSettingsDialog(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("alpha-v0.5", color = CoolGrayText, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    Text("alpha-v0.4", color = CoolGrayText, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("App made by Keegan Nhat", color = CoolGrayText.copy(alpha = 0.5f), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
                 }

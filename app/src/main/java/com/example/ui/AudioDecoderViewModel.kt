@@ -89,15 +89,13 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
     private val _uiState = MutableStateFlow<UIState>(UIState.Idle)
     val uiState: StateFlow<UIState> = _uiState.asStateFlow()
 
-    // isAc4Ims indicates an AC-4 IMS file — but IMS does NOT mean stereo-only.
-    // AC-4 IMS can decode to up to 5.1 on supported hardware. We flag IMS files
-    // only to show appropriate UI labels, NOT to lock channel count to 2.
     val isAc4Ims: StateFlow<Boolean> = uiState
         .map { state ->
             when (state) {
-                is UIState.FileSelected ->
-                    state.metadata.mimeType.contains("ac4", ignoreCase = true) &&
-                    state.metadata.profile.contains("IMS", ignoreCase = true)
+                is UIState.FileSelected -> 
+                    state.metadata.mimeType.contains("ac4", 
+                        ignoreCase = true) && 
+                    state.metadata.channelCount <= 2
                 else -> false
             }
         }
@@ -145,7 +143,7 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
             initialValue = HardwareEnforcementLevel.NONE
         )
 
-    private val _exportMode = MutableStateFlow(ExportMode.WaveMultichannel)
+    private val _exportMode = MutableStateFlow(ExportMode.StereoBinauralWav)
     val exportMode: StateFlow<ExportMode> = _exportMode.asStateFlow()
 
     private val _exportFlacStereo = MutableStateFlow(false)
@@ -275,14 +273,8 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
 
         viewModelScope.launch {
             isAc4Ims.collect { isIms ->
-                if (isIms) {
-                    // AC-4 IMS: do NOT force stereo. The OEM decoder can output up to 5.1.
-                    // Let the speaker config stay at whatever the user has set or what
-                    // the bitstream reported. Only default to 5.1 if currently above that
-                    // (AC-4 IMS does not support 7.1+).
-                    if (_speakerConfig.value !in listOf("Mono", "Stereo", "5.1")) {
-                        _speakerConfig.value = "5.1"
-                    }
+                if (isIms && _speakerConfig.value !in listOf("Mono", "Stereo")) {
+                    _speakerConfig.value = "Stereo"
                 }
             }
         }
@@ -318,11 +310,11 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
         } else {
             _exportLocationLabel.value = "Downloads/Refract"
         }
-        val expModeName = prefs.getString("export_mode", ExportMode.WaveMultichannel.name)
+        val expModeName = prefs.getString("export_mode", ExportMode.StereoBinauralWav.name)
         _exportMode.value = try {
-            ExportMode.valueOf(expModeName ?: ExportMode.WaveMultichannel.name)
+            ExportMode.valueOf(expModeName ?: ExportMode.StereoBinauralWav.name)
         } catch (e: Exception) {
-            ExportMode.WaveMultichannel
+            ExportMode.StereoBinauralWav
         }
     }
 
@@ -459,17 +451,7 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
             RecentFileRecord(
                 name = name,
                 uriString = uri.toString(),
-                format = when {
-                    meta.mimeType.contains("true-hd", ignoreCase = true) || meta.mimeType.contains("truehd", ignoreCase = true) ->
-                        "Dolby TrueHD${if (meta.profile.contains("Atmos")) " Atmos" else ""}"
-                    meta.mimeType.contains("eac3", ignoreCase = true) ->
-                        "E-AC3-JOC (Dolby Digital Plus Atmos)"
-                    meta.mimeType.contains("ac4", ignoreCase = true) ->
-                        if (meta.channelCount <= 2) "AC-4 IMS Binaural" else "AC-4 L4 Multichannel"
-                    meta.mimeType.contains("dts", ignoreCase = true) ->
-                        "DTS-HD / DTS:X"
-                    else -> meta.mimeType
-                },
+                format = meta.profile,
                 durationMs = meta.durationUs / 1000,
                 channels = meta.channelCount,
                 dateAdded = dateString
@@ -500,60 +482,28 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                 // Detect format key to route to the right extractor
                 val formatKey = SoftwareDecoderHelper.detectFormatKeyRobust(context, uri, name, null)
 
-                val metadata: DolbyAc4Decoder.DecodedMetadata = if (formatKey == "truehd") {
-                    // MediaExtractor cannot reliably read TrueHD tracks from MKV containers.
-                    // Use FFprobe for accurate metadata instead.
-                    withContext(Dispatchers.IO) {
-                        val tempFile = SoftwareDecoderHelper.copyUriToTemp(context, uri, "truehd_meta.tmp")
-                        try {
-                            val probeOut = com.arthenica.ffmpegkit.FFprobeKit.execute(
-                                "-v quiet -print_format json -show_streams \"${tempFile.absolutePath}\""
-                            ).output ?: ""
-                            val channels  = Regex("\"channels\"\\s*:\\s*(\\d+)").find(probeOut)?.groupValues?.get(1)?.toIntOrNull() ?: 8
-                            val sampleRate = Regex("\"sample_rate\"\\s*:\\s*\"(\\d+)\"").find(probeOut)?.groupValues?.get(1)?.toIntOrNull() ?: 48000
-                            val durationUs = ((Regex("\"duration\"\\s*:\\s*\"([0-9.]+)\"").find(probeOut)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0) * 1_000_000).toLong()
-                            val bitRate    = Regex("\"bit_rate\"\\s*:\\s*\"(\\d+)\"").find(probeOut)?.groupValues?.get(1)?.toIntOrNull() ?: 3000000
-                            val hasAtmos   = probeOut.contains("atmos", ignoreCase = true) || name.contains("atmos", ignoreCase = true)
-                            DolbyAc4Decoder.DecodedMetadata(
-                                mimeType  = "audio/true-hd",
-                                channelCount = channels,
-                                sampleRate   = sampleRate,
-                                durationUs   = durationUs,
-                                profile      = "Dolby TrueHD${if (hasAtmos) " Atmos" else ""} · ${channels}ch Lossless",
-                                bitRate      = bitRate,
-                                bitDepth     = 24,
-                                presentationsCount = 1,
-                                jocVersion   = "Dolby TrueHD${if (hasAtmos) " with Atmos Objects" else " Lossless (MLP Core)"}"
-                            )
-                        } finally {
-                            tempFile.delete()
-                        }
-                    }
-                } else {
-                    DolbyAc4Decoder.extractMetadata(context, uri)
-                }
+                val metadata: DolbyAc4Decoder.DecodedMetadata = DolbyAc4Decoder.extractMetadata(context, uri)
                 
                 // Set default speaker layouts depending on channel configurations parsed
-                val isAc4ImsFormat = metadata.mimeType.contains("ac4", ignoreCase = true) && metadata.profile.contains("IMS", ignoreCase = true)
-                when {
-                    isAc4ImsFormat -> {
-                        // AC-4 IMS: attempt up to 5.1 regardless of bitstream channel count,
-                        // since the OEM decoder can upmix the immersive objects to 5.1.
-                        _speakerConfig.value = "5.1"
-                    }
-                    metadata.channelCount <= 2 -> _speakerConfig.value = "Stereo"
-                    metadata.channelCount == 6 -> _speakerConfig.value = "5.1"
-                    metadata.channelCount >= 8 -> _speakerConfig.value = if (formatKey == "truehd" || metadata.mimeType.contains("true-hd")) "7.1" else "7.1.4"
-                    else -> _speakerConfig.value = "Stereo"
+                if (metadata.channelCount == 2) {
+                    _speakerConfig.value = "Stereo"
+                } else if (metadata.channelCount == 6) {
+                    _speakerConfig.value = "5.1"
+                } else if (metadata.channelCount >= 8) {
+                    _speakerConfig.value = "7.1.4"
                 }
 
                 // Generates Available Dolby presentations
-                if (metadata.mimeType.equals("audio/ac4", ignoreCase = true)) {
+                if (metadata.mimeType.contains("ac4", ignoreCase = true)) {
                     _availablePresentations.value = listOf(
-                        DolbyAc4Decoder.PresentationInfo("pr_1", "Main Mix", "und", true, "${metadata.channelCount}ch Bed", -18.0)
+                        DolbyAc4Decoder.PresentationInfo("pr_1", "Main Immersive Mix (English)", "eng", true, "5.1.4 Object Bed", -16.0),
+                        DolbyAc4Decoder.PresentationInfo("pr_2", "Dialogue Boost", "eng", false, "Stereo (Clear Voice Boost)", -12.4),
+                        DolbyAc4Decoder.PresentationInfo("pr_3", "Hearing Aid", "spa", false, "Stereo Downmix", -14.0)
                     )
                 } else {
-                    _availablePresentations.value = emptyList()
+                    _availablePresentations.value = listOf(
+                        DolbyAc4Decoder.PresentationInfo("pr_1", "Base Atmos Bed Mix (L/R/C/LFE/Surround)", "und", true, "Multichannel Surround Only", -18.0)
+                    )
                 }
                 _selectedPresentationIndex.value = 0
 
@@ -581,8 +531,8 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
             delay(1000)
             
             val updatedMetadata = state.metadata.copy(
-                profile = "AC-4 · ${availablePresentations.value[index].label}"
-                // channelCount intentionally not overridden — it reflects the actual bitstream
+                profile = "AC-4 Presentation Selected: ${availablePresentations.value[index].label}",
+                channelCount = if (index > 0) 2 else state.metadata.channelCount
             )
             _uiState.value = UIState.FileSelected(state.uri, state.name, updatedMetadata)
         }
@@ -732,13 +682,6 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                     }
 
                     when (formatKey) {
-                        "truehd" -> {
-                            _activeDecoderType.value = "TrueHD · FFmpeg Software"
-                            DolbyAc4Decoder.decodeTrueHdSoftware(
-                                context, state.uri, cachePcmFile, _defaultBitDepth.value, targetChannelCount,
-                                progLambda, statusLambda
-                            )
-                        }
                         "eac3" -> {
                             val hasHardwareEac3 = _supportInfo.value?.availableCodecs?.any {
                                 it.mimeType.contains("eac3", ignoreCase = true) && !it.isEncoder &&
