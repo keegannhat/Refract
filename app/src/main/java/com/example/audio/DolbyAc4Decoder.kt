@@ -162,7 +162,7 @@ object DolbyAc4Decoder {
                     bitRate = bitrate,
                     bitDepth = 16,
                     presentationsCount = if (mime.contains("ac4")) 3 else 1,
-                    jocVersion = if (mime.contains("eac3")) "JOC v2 (Atmos Master Spatial Objects)" else "AC-4 Immersive Stage"
+                    jocVersion = if (mime.contains("eac3")) "JOC (Matrixed Objects)" else "AC-4 Immersive Stereo"
                 )
             }
         } catch (e: Exception) {
@@ -182,7 +182,7 @@ object DolbyAc4Decoder {
                 bitRate = 448000,
                 bitDepth = 24,
                 presentationsCount = 1,
-                jocVersion = "JOC v2 (Atmos Master Spatial Objects)"
+                jocVersion = "JOC (Matrixed Objects)"
             )
         } else {
             val isIms = ext == "ims" || lowerName.contains("ims") || lowerName.contains("binaural")

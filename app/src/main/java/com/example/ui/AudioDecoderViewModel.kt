@@ -149,7 +149,7 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
             initialValue = HardwareEnforcementLevel.NONE
         )
 
-    private val _exportMode = MutableStateFlow(ExportMode.StereoBinauralWav)
+    private val _exportMode = MutableStateFlow(ExportMode.WaveMultichannel)
     val exportMode: StateFlow<ExportMode> = _exportMode.asStateFlow()
 
     private val _exportFlacStereo = MutableStateFlow(false)
@@ -319,11 +319,12 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
         } else {
             _exportLocationLabel.value = "Downloads/Refract"
         }
-        val expModeName = prefs.getString("export_mode", ExportMode.StereoBinauralWav.name)
+        val expModeName = prefs.getString("export_mode", ExportMode.WaveMultichannel.name)
         _exportMode.value = try {
-            ExportMode.valueOf(expModeName ?: ExportMode.StereoBinauralWav.name)
+            val loadedMode = ExportMode.valueOf(expModeName ?: ExportMode.WaveMultichannel.name)
+            if (loadedMode == ExportMode.StereoBinauralWav) ExportMode.WaveMultichannel else loadedMode
         } catch (e: Exception) {
-            ExportMode.StereoBinauralWav
+            ExportMode.WaveMultichannel
         }
         val codecName = prefs.getString("export_codec", ExportCodec.FLAC.name)
         _exportCodec.value = try {
@@ -814,6 +815,11 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
 
                     ExportMode.MonoFlacCustomSplit -> {
                       val codec = _exportCodec.value
+                      val statusText = when (codec) {
+                        ExportCodec.FLAC -> "Encoding channels to FLAC..."
+                        ExportCodec.OPUS -> "Encoding channels to Opus 256kbps..."
+                        ExportCodec.AAC -> "Encoding channels to AAC 256kbps..."
+                      }
                       val codecName = when (codec) {
                         ExportCodec.OPUS -> "Opus"
                         ExportCodec.AAC -> "AAC"
@@ -821,7 +827,7 @@ class AudioDecoderViewModel(application: Application) : AndroidViewModel(applica
                       }
                       withContext(Dispatchers.Main) {
                         _uiState.value = processingState.copy(
-                          progress = 0.97f, status = "Encoding $codecName channels...")
+                          progress = 0.97f, status = statusText)
                       }
                       val tempDir = File(context.cacheDir, "split_tmp").apply { mkdirs() }
                       val files = FfmpegExportHelper.splitChannels(

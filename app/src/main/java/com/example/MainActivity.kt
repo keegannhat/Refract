@@ -788,7 +788,7 @@ fun CapabilitiesHardwareCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Decoder Diagnostics Suite",
+                        text = "Decoder Status",
                         fontWeight = FontWeight.Bold,
                         color = IceWhite,
                         fontSize = 14.sp
@@ -1168,7 +1168,7 @@ fun FileSelectedCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Profile Standard:", color = CoolGrayText, fontSize = 11.sp)
+                        Text("File Format:", color = CoolGrayText, fontSize = 11.sp)
                         Text(info.profile, color = PurpleGlow, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
 
@@ -1185,7 +1185,7 @@ fun FileSelectedCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Decoded Bit Depth:", color = CoolGrayText, fontSize = 11.sp)
-                        Text("${info.bitDepth}-bit uncompressed PCM", color = IceWhite, fontSize = 11.sp)
+                        Text("${info.bitDepth}-bit", color = IceWhite, fontSize = 11.sp)
                     }
 
                     Row(
@@ -1200,7 +1200,7 @@ fun FileSelectedCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Atmos Master Standard:", color = CoolGrayText, fontSize = 11.sp)
+                        Text("Codec:", color = CoolGrayText, fontSize = 11.sp)
                         Text(info.jocVersion, color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
 
@@ -1470,13 +1470,6 @@ fun FileSelectedCard(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ExportModeOptionTile(
-                    title = "Stereo Downmix",
-                    desc = "Downmixes discrete sound coordinates into spatialized binaural stereo WAV (Recommended for regular headphones).",
-                    selected = selectedMode == AudioDecoderViewModel.ExportMode.StereoBinauralWav,
-                    onClick = { onModeSelect(AudioDecoderViewModel.ExportMode.StereoBinauralWav) }
-                )
-
                 ExportModeOptionTile(
                     title = "Multichannel WAV",
                     desc = "Generates a single multichannel uncompressed WAV preserving layout mapping coordinates (Ideal for DAW editing).",
@@ -2320,7 +2313,7 @@ fun SystemSettingsDialog(
 
                 // Export Codecs selection section
                 Column {
-                    Text("Export Codecs", color = IceWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Export Codec", color = IceWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
@@ -2385,7 +2378,7 @@ fun SystemSettingsDialog(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("alpha-v0.4", color = CoolGrayText, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    Text("alpha-v0.5", color = CoolGrayText, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("App made by Keegan Nhat", color = CoolGrayText.copy(alpha = 0.5f), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
                 }
